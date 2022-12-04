@@ -42,6 +42,13 @@ interface GroupSyncInjector {
     public function getColumnType(): string;
 
     /**
+     * Determine if this injector is capable of batching group sync change requests.
+     *
+     * @return bool Whether this can batch group sync change requests
+     */
+    public function batchable(): bool;
+
+    /**
      * Determine if this injector should be enabled or not.
      *
      * The GroupSyncManager will check if this injector's module is enabled or not.

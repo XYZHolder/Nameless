@@ -25,6 +25,10 @@ class MinecraftGroupSyncInjector implements GroupSyncInjector {
         return 'VARCHAR(64)';
     }
 
+    public function batchable(): bool {
+        return false;
+    }
+
     public function shouldEnable(): bool {
         return Util::getSetting('group_sync_mc_server') != 0 && count($this->getSelectionOptions()) > 0;
     }

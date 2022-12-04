@@ -20,18 +20,26 @@ class Discord {
     private static Language $_discord_integration_language;
 
     /**
-     * @var array Valid responses from the Discord bot
+     * @var array Valid responses from the Discord bot in the root "status" key
      */
-    private const VALID_RESPONSES = [
-        'fullsuccess',
-        'partsuccess',
-        'badparameter',
-        'error',
-        'invguild',
-        'invuser',
-        'notlinked',
+    private const VALID_ROOT_STATUSES = [
+        'success',
+        'bad_request',
+        'not_linked',
         'unauthorized',
-        'invrole',
+        'invalid_guild',
+    ];
+
+    /**
+     * @var array Valid responses from the Discord bot in each of the "role_change->success" keys
+     */
+    private const VALID_ROLE_CHANGE_STATUSES = [
+        'none',
+        'added',
+        'removed',
+        'no_permission',
+        'invalid_user',
+        'invalid_role',
     ];
 
     /**
@@ -52,26 +60,68 @@ class Discord {
             return false;
         }
 
-        $changed_arr = array_merge(self::assembleGroupArray($added, 'add'), self::assembleGroupArray($removed, 'remove'));
+        $role_changes = array_merge(
+            self::assembleGroupArray($integrationUser->data()->identifier, $added, 'add'),
+            self::assembleGroupArray($integrationUser->data()->identifier, $removed, 'remove')
+        );
 
-        if (!count($changed_arr)) {
+        if (!count($role_changes)) {
             return false;
         }
 
-        $json = self::assembleJson($integrationUser->data()->identifier, $changed_arr);
+        $response = self::discordBotRequest('/applyRoleChanges', self::assembleJson($role_changes));
 
-        $result = self::discordBotRequest('/roleChange', $json);
+        if ($response['status'] === 'success') {
+            // check if all the role_changes status is "success"
+            foreach ($response['role_changes'] as $role_change) {
+                if (in_array($role_change['status'], ['added', 'removed'])) {
+                    return false;
+                }
+            }
 
-        if ($result == 'fullsuccess') {
+            foreach ($response['role_changes'] as $role_change) {
+                if ($role_change['status'] === 'no_permission') {
+                    //
+                }
+
+                if ($role_change['status'] === 'invalid_user') {
+                    //
+                }
+
+                if ($role_change['status'] === 'invalid_role') {
+                    //
+                }
+
+                if (!in_array($role_change['status'], ['added', 'removed', 'none'])) {
+                    Log::getInstance()->log(Log::Action('discord/role_set'), self::getLanguageTerm("discord_bot_error_{$response['status']}"), $user->data()->id);
+                }
+
+                return false;
+            }
+
             return true;
+        } else {
+
         }
 
-        if ($result == 'partsuccess') {
+//        if (in_array($response, self::VALID_ROOT_STATUSES)) {
+//            return $response;
+//        }
+//
+//        // Log unknown error from bot
+//        Log::getInstance()->log(Log::Action('discord/role_set'), $response);
+//        return false;
+//
+//        if ($result == 'fullsuccess') {
+//            return true;
+//        }
+
+        if ($response === 'partsuccess') {
             Log::getInstance()->log(Log::Action('discord/role_set'), self::getLanguageTerm('discord_bot_error_partsuccess'), $user->data()->id);
             return true;
         }
 
-        $errors = self::parseErrors($result);
+        $errors = self::parseErrors($response);
 
         foreach ($errors as $error) {
             Log::getInstance()->log(Log::Action('discord/role_set'), $error, $user->data()->id);
@@ -90,21 +140,17 @@ class Discord {
     /**
      * Create a JSON object to send to the Discord bot.
      *
+     * @param string $user_id The Discord user ID
      * @param array $role_ids Array of Discord role IDs to add or remove
      * @param string $action Whether to 'add' or 'remove' the groups
      * @return array Assembled array of Discord role IDs and their action
      */
-    private static function assembleGroupArray(array $role_ids, string $action): array {
-        $return = [];
-
-        foreach ($role_ids as $role_id) {
-            $return[] = [
-                'id' => $role_id,
-                'action' => $action
-            ];
-        }
-
-        return $return;
+    private static function assembleGroupArray(string $user_id, array $role_ids, string $action): array {
+        return array_map(static fn($role_id) => [
+            'user_id' => $user_id,
+            'role_id' => $role_id,
+            'action' => $action,
+        ], $role_ids);
     }
 
     /**
@@ -128,17 +174,14 @@ class Discord {
     /**
      * Create a JSON objec to send to the Discord bot.
      *
-     * @param int $user_id Discord user ID to affect
-     * @param array $change_arr Array of Discord role IDs to add or remove (compiled with `assembleGroupArray`)
+     * @param array $role_changes Array of Discord role IDs to add or remove (compiled with `assembleGroupArray`)
      * @return string JSON object to send to the Discord bot
      */
-    private static function assembleJson(int $user_id, array $change_arr): string {
-        // TODO cache or define() website api key and discord guild id
+    private static function assembleJson(array $role_changes): string {
         return json_encode([
             'guild_id' => trim(self::getGuildId()),
-            'user_id' => $user_id,
             'api_key' => trim(Util::getSetting('mc_api_key')),
-            'roles' => $change_arr,
+            'role_changes' => $role_changes,
         ]);
     }
 
@@ -164,15 +207,7 @@ class Discord {
             return false;
         }
 
-        $response = $client->contents();
-
-        if (in_array($response, self::VALID_RESPONSES)) {
-            return $response;
-        }
-
-        // Log unknown error from bot
-        Log::getInstance()->log(Log::Action('discord/role_set'), $response);
-        return false;
+        return $client->contents();
     }
 
     /**
@@ -206,7 +241,7 @@ class Discord {
             ];
         }
 
-        if (in_array($result, self::VALID_RESPONSES)) {
+        if (in_array($result, self::VALID_ROOT_STATUSES)) {
             return [self::getLanguageTerm('discord_bot_error_' . $result)];
         }
 

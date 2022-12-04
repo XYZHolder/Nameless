@@ -25,6 +25,10 @@ class DiscordGroupSyncInjector implements GroupSyncInjector {
         return 'BIGINT';
     }
 
+    public function batchable(): bool {
+        return true;
+    }
+
     public function shouldEnable(): bool {
         return Discord::isBotSetup();
     }
@@ -63,10 +67,18 @@ class DiscordGroupSyncInjector implements GroupSyncInjector {
     }
 
     public function addGroup(User $user, $group_id): bool {
-        return Discord::updateDiscordRoles($user, [$group_id], []) === true;
+        throw new Error('Not implemented');
     }
 
     public function removeGroup(User $user, $group_id): bool {
-        return Discord::updateDiscordRoles($user, [], [$group_id]) === true;
+        throw new Error('Not implemented');
+    }
+
+    public function addGroups(User $user, array $group_ids): bool {
+        return Discord::updateDiscordRoles($user, $group_ids, []) === true;
+    }
+
+    public function removeGroups(User $user, array $group_ids): bool {
+        return Discord::updateDiscordRoles($user, [], $group_ids) === true;
     }
 }

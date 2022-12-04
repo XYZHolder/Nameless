@@ -22,7 +22,7 @@ final class GroupSyncManager extends Instanceable {
      */
     public function registerInjector(GroupSyncInjector $injector): void {
         if (in_array($injector->getColumnName(), $this->getColumnNames())) {
-            throw new RuntimeException("GroupSyncInjector column name {$injector->getColumnName()} already taken, {$class} tried to use it as well.");
+            throw new RuntimeException("GroupSyncInjector column name {$injector->getColumnName()} already taken.");
         }
 
         $this->_injectors[$injector->getColumnName()] = $injector;
@@ -168,10 +168,12 @@ final class GroupSyncManager extends Instanceable {
                 if (count($group_ids) === 0) {
                     return [];
                 }
-                
+
                 break;
             }
         }
+
+        $batch_injectors = [];
 
         foreach ($rules as $rule) {
 
@@ -201,12 +203,15 @@ final class GroupSyncManager extends Instanceable {
                 }
 
                 if (in_array($sending_group_id, $group_ids)) {
-                    // TODO: add bot status of "nochange" @ https://canary.discord.com/channels/246705793066467328/434751012428054530/995503906350174290
-                    // Attempt to add group if this group id was sent in the broadcastChange() method
-                    // and if they don't have the namelessmc equivilant of it
-                    if ($injector->addGroup($user, $injector_group_id)) {
-                        $modified[$injector_column][] = $injector_group_id;
-                        $logs['added'][] = "{$injector_column} -> {$injector_group_id}";
+                    if ($injector->batchable()) {
+                        $batch_injectors[$injector]['add'][] = $injector_group_id;
+                    } else {
+                        // Attempt to add group if this group id was sent in the broadcastChange() method
+                        // and if they don't have the namelessmc equivilant of it
+                        if ($injector->addGroup($user, $injector_group_id)) {
+                            $modified[$injector_column][] = $injector_group_id;
+                            $logs['added'][] = "{$injector_column} -> {$injector_group_id}";
+                        }
                     }
                 } else {
                     foreach ($rules as $item) {
@@ -217,11 +222,33 @@ final class GroupSyncManager extends Instanceable {
                         }
                     }
 
-                    // Attempt to remove this group if it doesn't have multiple rules, or if the group ids
-                    // list sent to broadcastChange() was empty - NOT both
-                    if ($injector->removeGroup($user, $injector_group_id)) {
-                        $modified[$injector_column][] = $injector_group_id;
-                        $logs['removed'][] = "{$injector_column} -> {$injector_group_id}";
+                    if ($injector->batchable()) {
+                        $batch_injectors[$injector]['remove'][] = $injector_group_id;
+                    } else {
+                        // Attempt to remove this group if it doesn't have multiple rules, or if the group ids
+                        // list sent to broadcastChange() was empty - NOT both
+                        if ($injector->removeGroup($user, $injector_group_id)) {
+                            $modified[$injector_column][] = $injector_group_id;
+                            $logs['removed'][] = "{$injector_column} -> {$injector_group_id}";
+                        }
+                    }
+                }
+            }
+        }
+
+        if (count($batch_injectors)) {
+            foreach ($batch_injectors as $injector => $action) {
+                foreach ($action as $type => $group_ids) {
+                    if ($type === 'add') {
+                        if ($injector->addGroups($user, $group_ids)) {
+                            $modified[$column] = $group_ids;
+                            $logs['added'][] = "{$column} -> " . implode(', ', $group_ids);
+                        }
+                    } else {
+                        if ($injector->removeGroups($user, $group_ids)) {
+                            $modified[$injector_column][] = $injector_group_id;
+                            $logs['removed'][] = "{$injector_column} -> {$injector_group_id}";
+                        }
                     }
                 }
             }

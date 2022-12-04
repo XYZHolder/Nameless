@@ -25,6 +25,10 @@ class NamelessMCGroupSyncInjector implements GroupSyncInjector {
         return 'INT';
     }
 
+    public function batchable(): bool {
+        return false;
+    }
+
     public function shouldEnable(): bool {
         return true;
     }
